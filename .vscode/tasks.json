@@ -1,0 +1,30 @@
+{
+    "tasks": [
+        {
+            "type": "cppbuild",
+            "label": "run cmakelists",
+            "command": "cmake",
+            "args": [
+                "-DCMAKE_BUILD_TYPE=Debug",
+                "./.."
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/build"
+            }
+        }, 
+        {
+            "type": "cppbuild",
+            "label": "build project",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "."
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/build"
+            },
+            "dependsOn": ["run cmakelists"]
+        }
+    ],
+    "version": "2.0.0"
+}
