@@ -36,10 +36,10 @@ void loadMenu() {
     unique_ptr<GUIElement> pane = make_unique<Pane>();
     GUI &gui = GUI::Get();
 
-    pane->addChildElement(std::move(make_unique<Text>(vec2{0, 0}, 16, "Hello World!")));
+    pane->addChildElement(std::move(make_unique<Text>(vec2{0, 0}, 16, "Choose Scene!")));
 
     auto but = std::make_unique<Button>(vec2{100, 200});
-    but->addChildElement(std::make_unique<Text>(vec2{0, 0}, 16, "Test Button"));
+    but->addChildElement(std::make_unique<Text>(vec2{0, 0}, 16, "Track Generation"));
     but->onClick([] {
         std::puts("Start Track Scene!");
         loadTrackScene();

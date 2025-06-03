@@ -100,7 +100,7 @@ GLuint GUI::getTextureID(GUITexture type) {
 
 vector<int> GUI::getMetaData(GUITexture type) {
     auto index = static_cast<size_t>(type);
-    if (!guiMetaData[index].empty()) {
+    if (guiMetaData[index].empty()) {
         switch (type) {
             case GUITexture::FONT_META:
                 guiMetaData[index] = TextureLoader::loadMETAData("./Data/Textures/font.meta");
