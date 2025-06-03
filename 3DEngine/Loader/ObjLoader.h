@@ -1,18 +1,17 @@
+#pragma once
+
 #include <glm/glm.hpp>
-#include <vector>
+#include <memory>
 #include <string>
-
-
-using namespace glm;
-using namespace std;
+#include <vector>
+#include <unordered_map>
 
 class MaterialGroups;
 
-
 class ObjLoader {
-    public:
-        static bool loadOBJ( string path, MaterialGroups* matGroups);
-    
-    private:
-        static bool loadMTL(string path, MaterialGroups* matGroups);
+public:
+    static bool loadOBJ(const std::string& path, MaterialGroups* matGroups);
+
+private:
+    static bool loadMTL(const std::string& path, MaterialGroups* matGroups);
 };

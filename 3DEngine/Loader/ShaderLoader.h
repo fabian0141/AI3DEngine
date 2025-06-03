@@ -1,7 +1,11 @@
+#pragma once
 
 typedef unsigned int GLuint;
 
+#include <string>
+
 class ShaderLoader {
     public:
-        static GLuint LoadShaders(const char * vertex_file_path,const char * fragment_file_path, const char * geometry_file_path = nullptr);
+        static GLuint LoadShaders(const std::string vertexFilePath, const std::string fragmentFilePath,
+            const std::string geometryFilePath = "");
 };

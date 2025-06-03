@@ -1,16 +1,20 @@
+#pragma once
 #include <glm/glm.hpp>
 #include <string>
 #include <GL/glew.h>
-
-using namespace glm;
-using namespace std;
-
+#include <vector>
+#include <fstream>
+#include <iostream>
+#include <memory>
 
 class TextureLoader {
-    public:
-        static GLuint loadTGA(string path, bool filter = true);
-        static GLuint loadMETA(string path);
-        static int* loadMETAData(string path);
+public:
+    // loadTGA returns GLuint texture or 0 on failure
+    static GLuint loadTGA(const std::string& path, bool filter = true);
 
+    // loadMETA returns GLuint texture or 0 on failure
+    static GLuint loadMETA(const std::string& path);
 
+    // loadMETAData returns std::optional with vector<int>, empty on failure
+    static std::vector<int> loadMETAData(const std::string& path);
 };

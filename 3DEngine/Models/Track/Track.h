@@ -1,32 +1,32 @@
+#pragma once
+
 #include "../Model.h"
 #include <vector>
+#include <array>
 #include <glm/glm.hpp>
+#include <GL/glew.h>
 
-using namespace glm;
-using namespace std;
+class Camera;
 
-typedef float GLfloat;
+class Track : public Model {
+public:
+    Track(Camera& camera, GLuint programID);
+    void draw() override;
 
-class TrackGeneration : public Model {
-    public:
-        TrackGeneration(Camera* camera, GLuint programID);
-        void draw();
+private:
+    static constexpr float BALL_RADIUS = 0.2f;
+    static constexpr int PATH_COUNT = 3;
 
-    private:
-        const float BALL_RADIUS = 0.2f;
+    Camera& camera;
+    GLuint programID;
+    std::array<GLuint, PATH_COUNT> vertexBuffers{};
+    GLuint debugVertexBuffer{0};
 
-        Camera* camera;
-        GLuint programID;
-        GLuint vertexbuffer[3];
-        GLuint debugVertexbuffer;
+    std::array<std::vector<glm::vec3>, PATH_COUNT> trackPoints;
+    std::vector<glm::vec3> debugPoints;
 
-        vector<vec3> trackPoints[3];
-        vector<vec3> debugPoints;
-
-        const int roughPointsAmount = 10;
-
-        void generateRoughPath(vector<vec2> pathPoints[3]);
-        void refinePath(vector<vec2> &pathPoints, int dir);
-        vec2 getBallCenter(vec2 p1, vec2 p2, int dir);
-        void createTrack(vector<vec2> pathPoints[3]);
+    void generateRoughPath(std::array<std::vector<glm::vec2>, PATH_COUNT>& pathPoints);
+    void refinePath(std::vector<glm::vec2>& pathPoints, int dir);
+    glm::vec2 getBallCenter(const glm::vec2& p1, const glm::vec2& p2, int dir) const;
+    void createTrack(const std::array<std::vector<glm::vec2>, PATH_COUNT>& pathPoints);
 };

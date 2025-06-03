@@ -1,3 +1,0 @@
-/mnt/Shared/Projects/AI3DEngine/build/CMakeFiles/Engine.dir
-/mnt/Shared/Projects/AI3DEngine/build/CMakeFiles/edit_cache.dir
-/mnt/Shared/Projects/AI3DEngine/build/CMakeFiles/rebuild_cache.dir

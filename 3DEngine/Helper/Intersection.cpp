@@ -1,10 +1,6 @@
 #include "Intersection.h"
 
-bool Intersection::isInsideQuad(vec2 point, vec2 lowerRight, vec2 upperLeft) {
-    if (lowerRight.x <= point.x && point.x <= upperLeft.x) {
-        if (lowerRight.y <= point.y && point.y <= upperLeft.y) {
-            return true;
-        }
-    }
-    return false;
+bool Intersection::isInsideQuad(const vec2& point, const vec2& bottomRight, const vec2& topLeft) {
+    return bottomRight.x <= point.x && point.x <= topLeft.x &&
+           bottomRight.y <= point.y && point.y <= topLeft.y;
 }

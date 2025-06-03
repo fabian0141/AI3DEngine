@@ -2,6 +2,7 @@
 #include <string>
 #include <glm/glm.hpp>
 #include <vector>
+#include <memory>
 
 using namespace glm;
 using namespace std;
@@ -23,19 +24,18 @@ struct Material {
 };
 
 struct MaterialGroup {
-    Material* mat;
-    vector<Model*> models;
+    unique_ptr<Material> mat;
+    vector<unique_ptr<Model>> models;
 };
 
 class MaterialGroups {
     public:
-        MaterialGroups(Camera* camera, GLuint programID);
-        ~MaterialGroups();
-        void addMaterial(string materialName, Material* mat);
-        void addModel(string materialName, Model* model);
+        MaterialGroups(shared_ptr<Camera> camera, GLuint programID);
+        void addMaterial(string materialName, unique_ptr<Material> mat);
+        void addModel(string materialName, unique_ptr<Model> model);
         void draw();
     private:
         map<string, MaterialGroup> matGroups;
-        Camera* camera;
+        shared_ptr<Camera> camera;
         GLuint programID;
 };

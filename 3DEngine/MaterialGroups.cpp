@@ -2,35 +2,20 @@
 #include "Models/Model.h"
 #include "Camera.h"
 
-MaterialGroups::MaterialGroups(Camera* camera, GLuint programID) {
+MaterialGroups::MaterialGroups(shared_ptr<Camera> camera, GLuint programID) {
     this->camera = camera;
     this->programID = programID;
 }
 
-MaterialGroups::~MaterialGroups() {
-    for (const auto& [key, value] : matGroups) {
-
-        delete value.mat;
-        if (value.models.size() == 0) {
-            continue;
-        } 
-
-        for (auto &model : value.models)
-        {
-            delete model;
-        }
-    }
-}
-
-void MaterialGroups::addMaterial(string materialName, Material* mat) {
+void MaterialGroups::addMaterial(string materialName, unique_ptr<Material> mat) {
     if (auto matG = matGroups.find(materialName); matG == matGroups.end()) {
-        matGroups[materialName] = MaterialGroup {.mat = mat};
+        matGroups[materialName] = MaterialGroup {.mat = move(mat)};
     }
 }
 
-void MaterialGroups::addModel(string materialName, Model* model) {
+void MaterialGroups::addModel(string materialName, unique_ptr<Model> model) {
     if (auto matG = matGroups.find(materialName); matG != matGroups.end()) {
-        matGroups[materialName].models.push_back(model);
+        matGroups[materialName].models.push_back(move(model));
     } else {
         printf("Could not find Material for Model\n");
     }
@@ -53,6 +38,7 @@ void MaterialGroups::draw() {
         if (value.models.size() == 0) {
             continue;
         } 
+        const auto& models = value.models;
 
         GLuint diffuseColor = glGetUniformLocation(programID, "diffuseColor");
         glUniform3f(diffuseColor, value.mat->diffuseColor[0], value.mat->diffuseColor[1], value.mat->diffuseColor[2]);
@@ -68,9 +54,6 @@ void MaterialGroups::draw() {
         vec3 camPos = camera->getPosition();
         glUniform3f(camPosition, camPos[0], camPos[1], camPos[2]);
         
-        for (auto &model : value.models)
-        {
-            model->draw();
-        }
+        for_each(models.begin(), models.end(), [](const unique_ptr<Model> &model) { model->draw(); });
     }
 }

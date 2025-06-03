@@ -1,146 +1,109 @@
 #include "Spline.h"
 #include <glm/gtx/rotate_vector.hpp>
 #include <cstdio>
+#include <numeric>
 
-Spline::Spline(vector<vec2> cps, vector<float> knots) {
-    conPoints = cps;
-    this->knots = knots;
-}
+Spline::Spline(const std::vector<vec2> cps, const std::vector<float> knotsIn) 
+    : conPoints(move(cps)), knots(move(knotsIn)) {}
 
-Spline::Spline(vector<vec2> points, bool circular) {
-
+Spline::Spline(const std::vector<vec2> points, bool circular) {
     if (!circular) {
-        knots.push_back(0);
-        knots.push_back(0);
-        knots.push_back(0);
-        knots.push_back(0);
-
-        for (int i = 0; i < points.size() - 1; i++)
-        {
-            knots.push_back(knots.back() + distance(points[i+1], points[i]));
+        knots = {0.f, 0.f, 0.f, 0.f};
+        for (size_t i = 0; i < points.size() - 1; ++i) {
+            knots.push_back(knots.back() + distance(points[i + 1], points[i]));
         }
-
-        knots.push_back(knots.back());
-        knots.push_back(knots.back());
-        knots.push_back(knots.back());
+        knots.insert(knots.end(), 3, knots.back());
         interpolate(points);
     } else {
-        for (int i = 0; i < points.size() + 7; i++)
-        {
-            knots.push_back(i);
-        }
+        knots.resize(points.size() + 7);
+        iota(knots.begin(), knots.end(), 0.f);
         interpolateCircular(points);
     }
 }
 
-void Spline::getLine(vector<vec2>& linePoints) {
+void Spline::getLine(std::vector<vec2>& linePoints) {
+    const int totalSegments = SEGMENTS_PER_CONTROL_POINTS * static_cast<int>(conPoints.size());
+    const float segmentLength = (knots[knots.size() - 4] - knots[3]) / totalSegments;
 
-    int totalSegments = SEGMENTS_PER_CONTROLLPOINTS * conPoints.size();
-    float segmentLength = (knots[knots.size() - 4] - knots[3]) / totalSegments;
-
-    for (int i = 0; i < totalSegments; i++)
-    {
-        vector<vec2> linePoint;
+    for (int i = 0; i < totalSegments; ++i) {
+        std::vector<vec2> linePoint;
         deBoor(knots[3] + i * segmentLength, 4, linePoint);
         linePoints.push_back(linePoint[0]);
     }
-    /*vector<vec2> linePoint;
-    deBoor(knots[knots.size() - 4], 4, linePoint);
-    linePoints.push_back(linePoint[0]);*/
 }
 
-void Spline::createParallelLine(vector<vec2>& paraLine, float distance) {
+void Spline::createParallelLine(std::vector<vec2>& paraLine, float distance) {
+    const int totalSegments = SEGMENTS_PER_CONTROL_POINTS * static_cast<int>(conPoints.size());
+    const float segmentLength = (knots[knots.size() - 4] - knots[3]) / totalSegments;
 
-    int totalSegments = SEGMENTS_PER_CONTROLLPOINTS * conPoints.size();
-    float segmentLength = (knots[knots.size() - 4] - knots[3]) / totalSegments;
-
-    for (int i = 0; i < totalSegments; i++)
-    {
-        vector<vec2> tangentPoint;
+    for (int i = 0; i < totalSegments; ++i) {
+        std::vector<vec2> tangentPoint;
         deBoor(knots[3] + i * segmentLength, 3, tangentPoint);
 
-        vec2 tangent = tangentPoint[1] - tangentPoint[0];
-        vec2 normal = normalize(vec2(-tangent.y, tangent.x)) * distance;
+        const vec2 tangent = tangentPoint[1] - tangentPoint[0];
+        const vec2 normal = normalize(vec2(-tangent.y, tangent.x)) * distance;
 
-        vector<vec2> linePoint;
+        std::vector<vec2> linePoint;
         deBoor(knots[3] + i * segmentLength, 4, linePoint);
         paraLine.push_back(linePoint[0] + normal);
     }
-
-    /*vector<vec2> tangentPoint;
-    deBoor(knots[knots.size() - 4], 3, tangentPoint);
-
-    vec2 tangent = tangentPoint[1] - tangentPoint[0];
-    vec2 normal = normalize(vec2(-tangent.y, tangent.x)) * distance;
-
-    vector<vec2> linePoint;
-    deBoor(knots[knots.size() - 4], 4, linePoint);
-    paraLine.push_back(linePoint[0] + normal);*/
 }
 
 void Spline::changeCurve(int idx, float rot, float dist) {
     idx += 3;
-    float t = knots[idx];
-    vector<vec2> tangentPoint;
+    const float t = knots[idx];
+    std::vector<vec2> tangentPoint;
     deBoor(t, 3, tangentPoint);
 
-    vec2 tangent = tangentPoint[1] - tangentPoint[0];
-    vec2 dir = rotate(normalize(tangent), rot) * dist;
+    const vec2 tangent = tangentPoint[1] - tangentPoint[0];
+    const vec2 dir = rotate(normalize(tangent), rot) * dist;
 
-    vector<vec2> insertPoint;
+    std::vector<vec2> insertPoint;
     deBoor(t, 4, insertPoint);
 
-    vector<vec2> points;
-
-    for (int i = 3; i < knots.size() - 4; i++)
-    {
-        if (i == idx) {
+    std::vector<vec2> points;
+    for (size_t i = 3; i < knots.size() - 4; ++i) {
+        if (static_cast<int>(i) == idx) {
             points.push_back(insertPoint[0] + dir);
         } else {
-            vector<vec2> linePoint;
+            std::vector<vec2> linePoint;
             deBoor(knots[i], 4, linePoint);
             points.push_back(linePoint[0]);
         }
     }
 
-    for (int i = 0; i < points.size(); i++)
-    {
-        printf("(%f, %f)\n", points[i].x, points[i].y);
+    for (const auto& p : points) {
+        std::printf("(%f, %f)\n", p.x, p.y);
     }
-    
 
     interpolateCircular(points);
 }
 
 void Spline::addCurve(float p, float rot, float dist) {
-    float t = p * (knots[knots.size() - 4] - knots[3]) + knots[3];
-    vector<vec2> tangentPoint;
+    const float t = p * (knots[knots.size() - 4] - knots[3]) + knots[3];
+    std::vector<vec2> tangentPoint;
     deBoor(t, 3, tangentPoint);
 
-    vec2 tangent = tangentPoint[1] - tangentPoint[0];
-    vec2 dir = rotate(normalize(tangent), rot) * dist;
+    const vec2 tangent = tangentPoint[1] - tangentPoint[0];
+    const vec2 dir = rotate(normalize(tangent), rot) * dist;
 
-    vector<vec2> insertPoint;
+    std::vector<vec2> insertPoint;
     deBoor(t, 4, insertPoint);
 
-    vector<vec2> points;
+    std::vector<vec2> points;
     bool inserted = false;
-
-    for (int i = 3; i < knots.size() - 4; i++)
-    {
+    for (size_t i = 3; i < knots.size() - 4; ++i) {
         if (!inserted && knots[i] > t) {
             inserted = true;
             points.push_back(insertPoint[0] + dir);
         }
-
-        vector<vec2> linePoint;
+        std::vector<vec2> linePoint;
         deBoor(knots[i], 4, linePoint);
         points.push_back(linePoint[0]);
     }
 
-    for (int i = 0; i < points.size(); i++)
-    {
-        printf("(%f, %f)\n", points[i].x, points[i].y);
+    for (const auto& p : points) {
+        std::printf("(%f, %f)\n", p.x, p.y);
     }
     
 
@@ -154,7 +117,7 @@ vector<vec2> Spline::getInterpolationPoints() {
 
 
 
-vec2 Spline::deBoor(float t, int column, vector<vec2>& returnVecs) {
+void Spline::deBoor(float t, int column, std::vector<vec2>& returnVecs) {
     if (t == knots[knots.size() - 4]) {
         t -= 0.000001f;
     }
@@ -174,7 +137,7 @@ vec2 Spline::deBoor(float t, int column, vector<vec2>& returnVecs) {
     }
 }
 
-float Spline::knotIndex(float t) {
+int Spline::knotIndex(float t) {
 
     int middle = knots.size() / 2;
     int lower = 0;
@@ -195,15 +158,13 @@ void Spline::insertKnot(float t) {
 
 }
 
-void Spline::setEquidistantKnots(vector<vec2> points) {
+void Spline::setEquidistantKnots(const std::vector<vec2>& points) {
     knots.clear();
-    for (int i = 0; i < points.size() + 7; i++)
-    {
-        knots.push_back(i);
-    }
+    knots.resize(points.size() + 7);
+    std::iota(knots.begin(), knots.end(), 0.f);
 }
 
-void Spline::interpolate(vector<vec2> points) {
+void Spline::interpolate(const std::vector<vec2>& points) {
 
     int n = points.size() + 2;
     vector<float> alphas(n);
@@ -229,6 +190,7 @@ void Spline::interpolate(vector<vec2> points) {
         cs[i] = betas[i] * gammas[i];
     }
 
+    as[0] = 0;
     bs[0] = 1;
     cs[0] = 0;
     as[1] = -1;
@@ -240,6 +202,8 @@ void Spline::interpolate(vector<vec2> points) {
     cs[n-2] = -1;
     as[n-1] = 0;
     bs[n-1] = 1;
+    cs[n-1] = 0;
+
     
     vector<vec2> res;
     res.push_back(points[0]);
@@ -251,15 +215,15 @@ void Spline::interpolate(vector<vec2> points) {
     solveEquation(as, bs, cs, res);
 }
 
-void Spline::solveEquation(vector<float> as, vector<float> bs, vector<float> cs, vector<vec2> res) {
+
+void Spline::solveEquation(const std::vector<float>& as, const std::vector<float>& bs,
+    const std::vector<float>& cs, std::vector<vec2>& res) {
 
     vector<float> vs(res.size());
     vector<float> zs(res.size());
     vector<vec2> ys(res.size() + 1);
 
     vs[0] = 0; 
-    as[0] = 0;
-    cs[res.size() - 1] = 0;
     ys[0] = vec2(0);
 
     for (int i = 0; i < res.size(); i++) {
@@ -276,7 +240,7 @@ void Spline::solveEquation(vector<float> as, vector<float> bs, vector<float> cs,
     }
 }
 
-void Spline::interpolateCircular(vector<vec2> points) {
+void Spline::interpolateCircular(const std::vector<vec2>& points) {
 
     interpolationPoints = points;
 
@@ -299,7 +263,9 @@ void Spline::interpolateCircular(vector<vec2> points) {
     conPoints[n+2] = conPoints[2];
 }
 
-void Spline::solveAlmostEquation(vector<float> as, vector<float> bs, vector<float> cs, vector<vec2> res) {
+
+void Spline::solveAlmostEquation(const std::vector<float>& as, const std::vector<float>& bs,
+    const std::vector<float>& cs, const std::vector<vec2>& res) {
 
     int n = res.size();
 

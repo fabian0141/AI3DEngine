@@ -1,57 +1,66 @@
 #include "Text.h"
 #include <GL/glew.h>
+#include <algorithm>
 
-Text::Text(vec2 pos, int fontSize, string text, GUI *gui) : GUIElement(false), fontSize(fontSize), gui(gui) {
+Text::Text(glm::vec2 pos, int fontSize, std::string_view text)
+    : GUIElement(false), fontSize(fontSize)
+{
     this->pos = pos;
-    textSize = text.size();
-    for (int i = 0; i < textSize; i++)
-    {
-        textInt[i] = text[i] - 33;
+    textSize = std::min(static_cast<int>(text.size()), 64);
+    for (int i = 0; i < textSize; ++i) {
+        textInt[i] = static_cast<int>(text[i]) - 33;
     }
 
-    fontWidths = gui->getMetaData(GUI::TEXT_META);
+    fontWidths = GUI::Get().getMetaData(GUITexture::FONT_META);
+
     int width = 0;
-    for (int i = 0; i < textSize; i++ ) {
+    for (int i = 0; i < textSize; ++i) {
         if (textInt[i] == -1) {
             width += 15;
         } else {
             width += fontWidths[textInt[i]] - (textInt[i] % 16) * 64;
         }
     }
-    size = vec2(width+2*textSize-1, 64);
+
+    size = glm::vec2(width + 2 * textSize - 1, 64);
 }
 
-void Text::click(const vec2 &mousePos, int action) {}
+Text::~Text() {
+    if (vertexbuffer != 0) {
+        glDeleteBuffers(1, &vertexbuffer);
+    }
+}
 
-void Text::preDraw() {
-    glGenBuffers(1, &vertexbuffer);
+void Text::click(const glm::vec2&, int) {
+    // no-op
+}
+
+void Text::preDraw(const vec2& parentSize) {
+    if (vertexbuffer == 0) {
+        glGenBuffers(1, &vertexbuffer);
+    }
+
     glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(pos), &pos, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec2), &pos, GL_STATIC_DRAW);
 }
 
 void Text::draw() {
-    GLuint programID = gui->getProgramID(GUI::TEXT_PROGRAM);
+    GUI &gui = GUI::Get();
+    GLuint programID = gui.getProgramID(GUIProgram::TEXT);
     glUseProgram(programID);
 
-    GLuint sizeID = glGetUniformLocation(programID, "canvasSize");
-    glUniform2f(sizeID, gui->canvasSize.x, gui->canvasSize.y);
-
-    GLuint textID = glGetUniformLocation(programID, "text");
-    glUniform1iv(textID, 64, textInt);
-
-    GLuint textSizeID = glGetUniformLocation(programID, "textSize");
-    glUniform1i(textSizeID, textSize);
-
-    GLuint fontMetaLocation = glGetUniformLocation(programID, "fontMeta");
-    glUniform1iv(fontMetaLocation, 256, fontWidths);
+    glUniform2f(glGetUniformLocation(programID, "canvasSize"), gui.canvasSize.x, gui.canvasSize.y);
+    glUniform1iv(glGetUniformLocation(programID, "text"), static_cast<GLsizei>(textInt.size()), textInt.data());
+    glUniform1i(glGetUniformLocation(programID, "textSize"), textSize);
+    glUniform1iv(glGetUniformLocation(programID, "fontMeta"), 256, fontWidths.data());
 
     glEnableVertexAttribArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, gui->getTextureID(GUI::TEXT_TEXTURE));
+    glBindTexture(GL_TEXTURE_2D, gui.getTextureID(GUITexture::FONT));
 
-    glDrawArrays(GL_POINTS, 0, 1); 
+    glDrawArrays(GL_POINTS, 0, 1);
     glDisableVertexAttribArray(0);
 }

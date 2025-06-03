@@ -1,166 +1,188 @@
 #include "ObjLoader.h"
-#include <cstdio>
-#include <cstring>
-#include <string>
 #include "../MaterialGroups.h"
 #include "../Models/ObjModel/ObjModel.h"
 
+#include <fstream>
+#include <sstream>
+#include <iostream>
+#include <unordered_map>
+#include <memory>
+
+using namespace glm;
+using namespace std;
+
 struct MaterialIndices {
-    string material;
-    vector< unsigned int >* indices;
+    string materialName;
+    vector<unsigned int> indices;
 };
 
-bool ObjLoader::loadOBJ(string path, MaterialGroups* matGroups) {
-
-
-    loadMTL(path.substr(0, path.length() - 3), matGroups);
-
-    FILE * file = fopen(path.c_str(), "r");
-    if( file == NULL ){
-        printf("Impossible to open the file !\n");
-        return false;
-    }
-
-    vector< MaterialIndices > matIndices;
-    vector< vec3 >* vertices = new vector< vec3 >();
-    vector< vec2 >* uvs  = new vector< vec2 >();
-    vector< vec3 >* normals  = new vector< vec3 >();
-
-    vector< vec3 > temp_vertices;
-    vector< vec2 > temp_uvs;
-    vector< vec3 > temp_normals;
-
-    while( 1 ){
-        char lineHeader[128];
-        // read the first word of the line
-        int res = fscanf(file, "%s", lineHeader);
-        if (res == EOF)
-            break; // EOF = End Of File. Quit the loop.
-
-        // else : parse lineHeader
-
-        if ( strcmp( lineHeader, "usemtl" ) == 0 ){
-            char material[128];
-            fscanf(file, "%s\n", material );
-            string matName = material;
-            matIndices.push_back( MaterialIndices {matName.substr(0, matName.find(".")), new vector< unsigned int >()});
-
-            vertices->resize(temp_vertices.size());
-            uvs->resize(temp_vertices.size());
-            normals->resize(temp_vertices.size());
-            vector< unsigned int >* indices  = new vector< unsigned int >();
-
-
-        } else if ( strcmp( lineHeader, "v" ) == 0 ){
-            vec3 vertex;
-            fscanf(file, "%f %f %f\n", &vertex.x, &vertex.y, &vertex.z );
-            temp_vertices.push_back(vertex);
-
-        } else if ( strcmp( lineHeader, "vt" ) == 0 ){
-            vec2 uv;
-            fscanf(file, "%f %f\n", &uv.x, &uv.y );
-            temp_uvs.push_back(uv);    
-        } else if ( strcmp( lineHeader, "vn" ) == 0 ){
-            vec3 normal;
-            fscanf(file, "%f %f %f\n", &normal.x, &normal.y, &normal.z );
-            temp_normals.push_back(normal);
-        } else if ( strcmp( lineHeader, "f" ) == 0 ){
-            string vertex1, vertex2, vertex3;
-            unsigned int vertexIndex[3], uvIndex[3], normalIndex[3];
-            int matches = fscanf(file, "%d/%d/%d %d/%d/%d %d/%d/%d\n", &vertexIndex[0], &uvIndex[0], &normalIndex[0], &vertexIndex[1], &uvIndex[1], &normalIndex[1], &vertexIndex[2], &uvIndex[2], &normalIndex[2] );
-            if (matches != 9){
-                printf("File can't be read by our simple parser : ( Try exporting with other options\n");
-                return false;
-            }
-            matIndices.back().indices->push_back(vertexIndex[0]-1);
-            matIndices.back().indices->push_back(vertexIndex[1]-1);
-            matIndices.back().indices->push_back(vertexIndex[2]-1);
-
-            int pos1 = vertexIndex[0]-1;
-            int pos2 = vertexIndex[1]-1;
-            int pos3 = vertexIndex[2]-1;
-
-            (*vertices)[pos1] = temp_vertices[vertexIndex[0]-1];
-            (*vertices)[pos2] = temp_vertices[vertexIndex[1]-1];
-            (*vertices)[pos3] = temp_vertices[vertexIndex[2]-1];
-
-            (*uvs)[pos1] = temp_uvs[uvIndex[0]-1];
-            (*uvs)[pos2] = temp_uvs[uvIndex[1]-1];
-            (*uvs)[pos3] = temp_uvs[uvIndex[2]-1];
-
-            (*normals)[pos1] = temp_normals[normalIndex[0]-1];
-            (*normals)[pos2] = temp_normals[normalIndex[1]-1];
-            (*normals)[pos3] = temp_normals[normalIndex[2]-1];
-        }
-    }        
-
-    ObjModel* model = new ObjModel(vertices, matIndices[0].indices, uvs, normals);
-    matGroups->addModel(matIndices[0].material, model);
-
-    for (int i = 1; i < matIndices.size(); i++)
-    {
-        matGroups->addModel(matIndices[i].material, model->getSubModel(matIndices[i].indices));
-    }
-    
+static string getMTLPath(const string& objPath) {
+    auto pos = objPath.find_last_of('.');
+    if (pos == string::npos) return objPath + ".mtl";
+    return objPath.substr(0, pos) + ".mtl";
 }
 
-bool ObjLoader::loadMTL(string path, MaterialGroups* matGroups) {
-    path.append("mtl");
-
-    FILE * file = fopen(path.c_str(), "r");
-    if( file == NULL ) {
-        printf("Impossible to open the file !\n");
+bool ObjLoader::loadMTL(const string& mtlPath, MaterialGroups* matGroups) {
+    ifstream file(mtlPath);
+    if (!file.is_open()) {
+        cerr << "Failed to open MTL file: " << mtlPath << '\n';
         return false;
     }
 
-    Material* mat;
-    char name[128];
+    unique_ptr<Material> currentMaterial = nullptr;
+    string currentName;
+    string line;
 
+    while (getline(file, line)) {
+        istringstream ss(line);
+        string keyword;
+        ss >> keyword;
 
-    while( 1 ){
-        char lineHeader[128];
-        int res = fscanf(file, "%s", lineHeader);
-        if (res == EOF)
-            break;
-
-
-        if ( strcmp( lineHeader, "newmtl" ) == 0 ){
-            mat = new Material {};
-            fscanf(file, "%s\n", name );
-
-        } else if ( strcmp( lineHeader, "Ns" ) == 0 ) {
-            fscanf(file, "%f\n", &mat->specularExponent );
-
-        } else if ( strcmp( lineHeader, "Ka" ) == 0 ) {
-            vec3 ambient;
-            fscanf(file, "%f %f %f\n", &ambient.x, &ambient.y, &ambient.z );
-            mat->ambientColor = ambient;
-
-        } else if ( strcmp( lineHeader, "Kd" ) == 0 ) {
-            vec3 diffusion;
-            fscanf(file, "%f %f %f\n", &diffusion.x, &diffusion.y, &diffusion.z );
-            mat->diffuseColor = diffusion;
-
-        } else if ( strcmp( lineHeader, "Ks" ) == 0 ) {
-            vec3 specular;
-            fscanf(file, "%f %f %f\n", &specular.x, &specular.y, &specular.z );
-            mat->specularColor = specular;
-
-        } else if ( strcmp( lineHeader, "Ke" ) == 0 ) {
-            vec3 emmisive;
-            fscanf(file, "%f %f %f\n", &emmisive.x, &emmisive.y, &emmisive.z );
-            mat->emmissive = emmisive;
-
-        } else if ( strcmp( lineHeader, "Ni" ) == 0 ) {
-            fscanf(file, "%f\n", &mat->refraction );
-
-        } else if ( strcmp( lineHeader, "d" ) == 0 ) {
-            fscanf(file, "%f\n", &mat->dissolve );
-
-        } else if ( strcmp( lineHeader, "illum" ) == 0 ) {
-            fscanf(file, "%d\n", &mat->illumination );
-            string matName = name;
-            matGroups->addMaterial(matName.substr(0, matName.find(".")), mat);
+        if (keyword == "newmtl") {
+            if (currentMaterial && !currentName.empty()) {
+                matGroups->addMaterial(currentName, move(currentMaterial));
+            }
+            ss >> currentName;
+            currentMaterial = make_unique<Material>();
+        } else if (currentMaterial) {
+            if (keyword == "Ns") {
+                ss >> currentMaterial->specularExponent;
+            } else if (keyword == "Ka") {
+                ss >> currentMaterial->ambientColor.x >> currentMaterial->ambientColor.y >> currentMaterial->ambientColor.z;
+            } else if (keyword == "Kd") {
+                ss >> currentMaterial->diffuseColor.x >> currentMaterial->diffuseColor.y >> currentMaterial->diffuseColor.z;
+            } else if (keyword == "Ks") {
+                ss >> currentMaterial->specularColor.x >> currentMaterial->specularColor.y >> currentMaterial->specularColor.z;
+            } else if (keyword == "Ke") {
+                ss >> currentMaterial->emmissive.x >> currentMaterial->emmissive.y >> currentMaterial->emmissive.z;
+            } else if (keyword == "Ni") {
+                ss >> currentMaterial->refraction;
+            } else if (keyword == "d") {
+                ss >> currentMaterial->dissolve;
+            } else if (keyword == "illum") {
+                ss >> currentMaterial->illumination;
+                // On illumination line, add the material
+                if (currentMaterial && !currentName.empty()) {
+                    matGroups->addMaterial(currentName, move(currentMaterial));
+                    currentMaterial = nullptr;  // prevent double add
+                    currentName.clear();
+                }
+            }
         }
     }
+
+    // Add last material if file ends without illumination keyword
+    if (currentMaterial && !currentName.empty()) {
+        matGroups->addMaterial(currentName, move(currentMaterial));
+    }
+
+    return true;
+}
+
+bool ObjLoader::loadOBJ(const string& path, MaterialGroups* matGroups) {
+    if (!loadMTL(getMTLPath(path), matGroups)) {
+        cerr << "Warning: MTL file not loaded or missing.\n";
+        // We continue, OBJ can still be loaded without materials
+    }
+
+    ifstream file(path);
+    if (!file.is_open()) {
+        cerr << "Failed to open OBJ file: " << path << '\n';
+        return false;
+    }
+
+    vector<vec3> temp_vertices;
+    vector<vec2> temp_uvs;
+    vector<vec3> temp_normals;
+
+    vector<unique_ptr<ObjModel>> models;
+
+    unordered_map<string, vector<unsigned int>> materialToIndices;
+
+    string currentMaterial;
+    string line;
+
+    while (getline(file, line)) {
+        istringstream ss(line);
+        string keyword;
+        ss >> keyword;
+
+        if (keyword == "v") {
+            vec3 vertex;
+            ss >> vertex.x >> vertex.y >> vertex.z;
+            temp_vertices.push_back(vertex);
+        } else if (keyword == "vt") {
+            vec2 uv;
+            ss >> uv.x >> uv.y;
+            temp_uvs.push_back(uv);
+        } else if (keyword == "vn") {
+            vec3 normal;
+            ss >> normal.x >> normal.y >> normal.z;
+            temp_normals.push_back(normal);
+        } else if (keyword == "usemtl") {
+            ss >> currentMaterial;
+            // remove any file extension if present, e.g., "material.png" -> "material"
+            auto dotPos = currentMaterial.find('.');
+            if (dotPos != string::npos) currentMaterial = currentMaterial.substr(0, dotPos);
+            if (!materialToIndices.contains(currentMaterial)) {
+                materialToIndices[currentMaterial] = {};
+            }
+        } else if (keyword == "f") {
+            // Parse face in the format v/vt/vn, 3 vertices per face (triangles)
+            array<unsigned int, 3> vertexIndices{};
+            array<unsigned int, 3> uvIndices{};
+            array<unsigned int, 3> normalIndices{};
+
+            // Support format: v/vt/vn for 3 vertices
+            char slash;
+            bool validFace = true;
+            for (int i = 0; i < 3; ++i) {
+                if (!(ss >> vertexIndices[i] >> slash >> uvIndices[i] >> slash >> normalIndices[i])) {
+                    validFace = false;
+                    break;
+                }
+            }
+
+            if (!validFace) {
+                cerr << "Error: unsupported face format or incomplete face data.\n";
+                return false;
+            }
+
+            // Store indices relative to zero (OBJ indices start at 1)
+            for (int i = 0; i < 3; ++i) {
+                // Just store vertex indices (adjusted for zero base)
+                materialToIndices[currentMaterial].push_back(vertexIndices[i] - 1);
+            }
+        }
+    }
+
+    // Now create ObjModels for each material
+    for (auto& [materialName, indices] : materialToIndices) {
+        // Create vectors for vertices, uvs, normals for this material
+        auto vertices = vector<vec3>();
+        auto uvs = vector<vec2>();
+        auto normals = vector<vec3>();
+
+        vertices.reserve(indices.size());
+        uvs.reserve(indices.size());
+        normals.reserve(indices.size());
+
+        for (unsigned int idx : indices) {
+            if (idx < temp_vertices.size()) {
+                vertices.push_back(temp_vertices[idx]);
+                if (!temp_uvs.empty()) {
+                    uvs.push_back(idx < temp_uvs.size() ? temp_uvs[idx] : vec2{0, 0});
+                }
+                if (!temp_normals.empty()) {
+                    normals.push_back(idx < temp_normals.size() ? temp_normals[idx] : vec3{0, 0, 0});
+                }
+            }
+        }
+
+        // Create ObjModel and add to MaterialGroups
+        auto model = make_unique<ObjModel>(move(vertices), move(indices), move(uvs), move(normals));
+        matGroups->addModel(materialName, move(model));
+    }
+
+    return true;
 }

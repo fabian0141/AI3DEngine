@@ -1,5 +1,4 @@
 #include "Cube.h"
-
 #include <GL/glew.h>
 #include "../../Loader/ShaderLoader.h"
 #include "../../Loader/TextureLoader.h"
@@ -83,58 +82,64 @@ static const GLfloat g_uv_buffer_data[] = {
     0.667979f, 1.0f-0.335851f
 };
 
-Cube::Cube(Camera* camera) {
-    this->camera = camera;
-    GLuint VertexArrayID;
-    glGenVertexArrays(1, &VertexArrayID);
-    glBindVertexArray(VertexArrayID);
+Cube::Cube(Camera* camera) : camera(camera) {
+    // Load shaders
+    programID = ShaderLoader::LoadShaders("./Data/Shader/Cube.vert", "./Data/Shader/Cube.frag");
+    matrixID = glGetUniformLocation(programID, "MVP");
+    textureSamplerID = glGetUniformLocation(programID, "myTextureSampler");
 
-    programID = ShaderLoader::LoadShaders( "./Data/Shader/Cube.vert", "./Data/Shader/Cube.frag" );
+    // Load texture and store ID
+    textureID = TextureLoader::loadTGA("./Data/Textures/TestTex.tga");
 
-    TextureLoader::loadTGA("./Data/Textures/TestTex.tga");
+    // Create and bind VAO
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+    // Create vertex buffer
+    glGenBuffers(1, &vertexBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(g_vertex_buffer_data), g_vertex_buffer_data, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0); // layout(location = 0) in shader
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+    // Create UV buffer
+    glGenBuffers(1, &uvBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, uvBuffer);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(g_uv_buffer_data), g_uv_buffer_data, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(1); // layout(location = 1) in shader
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+    // Unbind VAO to avoid accidental modification
+    glBindVertexArray(0);
+}
+
+Cube::~Cube() {
+    glDeleteBuffers(1, &vertexBuffer);
+    glDeleteBuffers(1, &uvBuffer);
+    glDeleteVertexArrays(1, &vao);
+    glDeleteProgram(programID);
+    glDeleteTextures(1, &textureID);
 }
 
 void Cube::draw() {
     glUseProgram(programID);
 
-    GLuint MatrixID = glGetUniformLocation(programID, "MVP");
-    glUniformMatrix4fv(MatrixID, 1, GL_FALSE, camera->getModelViewProjection());
+    // Bind VAO that contains all buffer states
+    glBindVertexArray(vao);
 
+    // Send MVP matrix to shader
+    glUniformMatrix4fv(matrixID, 1, GL_FALSE, camera->getModelViewProjection());
 
-    GLuint vertexbuffer;
-    glGenBuffers(1, &vertexbuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(g_vertex_buffer_data), g_vertex_buffer_data, GL_STATIC_DRAW);
+    // Bind texture unit 0 and the loaded texture
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    glUniform1i(textureSamplerID, 0); // set the sampler uniform to texture unit 0
 
-    glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-    glVertexAttribPointer(
-    0,                  // attribute 0. No particular reason for 0, but must match the layout in the shader.
-    3,                  // size
-    GL_FLOAT,           // type
-    GL_FALSE,           // normalized?
-    0,                  // stride
-    (void*)0            // array buffer offset
-    );
+    // Draw the cube (12 triangles, 36 vertices)
+    glDrawArrays(GL_TRIANGLES, 0, 12 * 3);
 
-
-    GLuint texturebuffer;
-    glGenBuffers(1, &texturebuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, texturebuffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(g_uv_buffer_data), g_uv_buffer_data, GL_STATIC_DRAW);
-
-    glEnableVertexAttribArray(1);
-    glBindBuffer(GL_ARRAY_BUFFER, texturebuffer);
-    glVertexAttribPointer(
-        1,                                // attribute. No particular reason for 1, but must match the layout in the shader.
-        2,                                // size
-        GL_FLOAT,                         // type
-        GL_FALSE,                         // normalized?
-        0,                                // stride
-        (void*)0                          // array buffer offset
-    );
-
-    // Draw the triangle !
-    glDrawArrays(GL_TRIANGLES, 0, 12*3); // 12*3 indices starting at 0 -> 12 triangles -> 6 squares
-    glDisableVertexAttribArray(0);
+    // Unbind VAO (optional)
+    glBindVertexArray(0);
 }

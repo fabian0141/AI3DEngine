@@ -3,97 +3,78 @@
 #include "../../Loader/ShaderLoader.h"
 #include <cstdio>
 
-using namespace std;
 
-ObjModel::ObjModel(vector< vec3 >* vertices, vector< unsigned int >* indices, vector< vec2 >* uvs, vector< vec3 >* normals) {
-    this->vertices = vertices;
-    this->indices = indices;
-    this->uvs = uvs;
-    this->normals = normals;
+ObjModel::ObjModel(vector<vec3> vertices, vector<unsigned int> indices, vector<vec2> uvs, vector<vec3> normals)
+    : vertices(move(vertices)), indices(move(indices)), uvs(move(uvs)), normals(move(normals)) 
+{
+    glGenVertexArrays(1, &vertexArrayID);
+    glBindVertexArray(vertexArrayID);
 
-    GLuint VertexArrayID;
-    glGenVertexArrays(1, &VertexArrayID);
-    glBindVertexArray(VertexArrayID);
-
+    // Vertex buffer
     glGenBuffers(1, &vertexbuffer);
     glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-    glBufferData(GL_ARRAY_BUFFER, vertices->size() * sizeof(vec3),  &(*vertices)[0], GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vec3), vertices.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
-    //printf("%p, %p, %p\n", (void*)&vertices[0], (void*)&(*vertices)[0], (*vertices));
-
-    glGenBuffers(1, &elementbuffer);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices->size() * sizeof(unsigned int), &(*indices)[0], GL_STATIC_DRAW);
-
+    // Normal buffer
     glGenBuffers(1, &normalbuffer);
     glBindBuffer(GL_ARRAY_BUFFER, normalbuffer);
-    glBufferData(GL_ARRAY_BUFFER, normals->size() * sizeof(glm::vec3), &(*normals)[0], GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, normals.size() * sizeof(vec3), normals.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
-    printf("Vertices: %d %d %d\n", vertices->size(), indices->size(), normals->size());
+    // UV buffer if exists
+    if (!uvs.empty()) {
+        glGenBuffers(1, &uvbuffer);
+        glBindBuffer(GL_ARRAY_BUFFER, uvbuffer);
+        glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(vec2), uvs.data(), GL_STATIC_DRAW);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    }
+
+    // Element buffer
+    glGenBuffers(1, &elementbuffer);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+
+    glBindVertexArray(0); // Unbind VAO
 }
-
-ObjModel::ObjModel() {
-    isSubModel = true;
-}
-
-
 
 ObjModel::~ObjModel() {
-    if (!isSubModel) {
-        delete vertices;
-        delete uvs;
-        delete normals;
-    }
-    delete indices;
+    if (vertexbuffer) glDeleteBuffers(1, &vertexbuffer);
+    if (normalbuffer) glDeleteBuffers(1, &normalbuffer);
+    if (uvbuffer) glDeleteBuffers(1, &uvbuffer);
+    if (elementbuffer) glDeleteBuffers(1, &elementbuffer);
+    if (vertexArrayID) glDeleteVertexArrays(1, &vertexArrayID);
 }
 
 void ObjModel::draw() {
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
-
-    glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-    glVertexAttribPointer(
-    0,                  // attribute 0. No particular reason for 0, but must match the layout in the shader.
-    3,                  // size
-    GL_FLOAT,           // type
-    GL_FALSE,           // normalized?
-    0,                  // stride
-    (void*)0            // array buffer offset
-    );
-    // Draw the triangle !
-
-    glEnableVertexAttribArray(2);
-    glBindBuffer(GL_ARRAY_BUFFER, normalbuffer);
-    glVertexAttribPointer(
-        2,                                // attribute
-        3,                                // size
-        GL_FLOAT,                         // type
-        GL_FALSE,                         // normalized?
-        0,                                // stride
-        (void*)0                          // array buffer offset
-    );
-
-    glDrawElements(GL_TRIANGLES, indices->size(), GL_UNSIGNED_INT, (void*) 0); // Starting from vertex 0; 3 vertices total -> 1 triangle
-
-    glDisableVertexAttribArray(0);
-    glDisableVertexAttribArray(2);
+    glBindVertexArray(vertexArrayID);
+    glDrawElements(GL_TRIANGLES, (GLsizei)indices.size(), GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
 }
 
-ObjModel* ObjModel::getSubModel(vector< unsigned int >* subIndices) {
+unique_ptr<ObjModel> ObjModel::getSubModel(vector<unsigned int> subIndices) {
     GLuint subElementBuffer;
     glGenBuffers(1, &subElementBuffer);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, subElementBuffer);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, subIndices->size() * sizeof(unsigned int), (void*)&(*subIndices)[0], GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, subIndices.size() * sizeof(unsigned int), subIndices.data(), GL_STATIC_DRAW);
 
-
-    ObjModel* subModel = new ObjModel();
+    unique_ptr<ObjModel> subModel = unique_ptr<ObjModel>(new ObjModel());
 
     subModel->vertices = vertices;
-    subModel->indices = subIndices;
+    subModel->indices = move(subIndices);
     subModel->uvs = uvs;
     subModel->normals = normals;
 
     subModel->vertexbuffer = vertexbuffer;
-    subModel->elementbuffer = subElementBuffer;
     subModel->normalbuffer = normalbuffer;
+    subModel->uvbuffer = uvbuffer;
+    subModel->elementbuffer = subElementBuffer;
+    subModel->vertexArrayID = vertexArrayID;
+
+    subModel->isSubModel = true;
+
+    return subModel;
 }

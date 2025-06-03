@@ -1,26 +1,47 @@
-#include <vector>
-#include <glm/glm.hpp>
+#pragma once
 
-using namespace glm;
+#include <vector>
+#include <memory>
+#include <functional>
+#include <glm/glm.hpp>
+#include <limits>
+#include "GUI.h"
+
+
 using namespace std;
+using namespace glm;
 
 class GUIElement {
-    public:
-        vec2 size = vec2(100, 60);
+public:
+    vec2 size{100.0f, 60.0f};
 
-        GUIElement(int maxElements = INT_MAX) : maxElements(maxElements) {};
-        ~GUIElement() { for (auto elem : elements) delete elem; elements.clear(); };
-        virtual void click(const vec2 &mousePos, int action) = 0;
-        virtual void preDraw() = 0;
-        virtual void draw() = 0;
-        void addChildElement(GUIElement *elem) { if (maxElements > elements.size()) elements.push_back(elem);};
-        void move(vec2 pos) { this->pos = pos; };
-        void onClick(void (*clickFunc)()) { this->clickFunc = clickFunc; };
-    protected:
-        vec2 pos;
-        vector<GUIElement*> elements;
-        void (*clickFunc)();
+    explicit GUIElement(int maxElements = numeric_limits<int>::max())
+        : maxElements(maxElements) {}
 
-    private:
-        int maxElements;
+    virtual ~GUIElement() = default;
+
+    virtual void click(const vec2& mousePos, int action) = 0;
+    virtual void preDraw(const vec2& parentSize) = 0;
+    virtual void draw() = 0;
+
+    bool addChildElement(unique_ptr<GUIElement> elem) {
+        if (elements.size() < static_cast<size_t>(maxElements)) {
+            elements.push_back(std::move(elem));
+
+            return true;
+        }
+        return false;
+    }
+
+    void move(vec2 pos) { this->pos = pos; }
+
+    void onClick(function<void()> func) { this->clickFunc = std::move(func); }
+
+protected:
+    vec2 pos{};
+    vector<unique_ptr<GUIElement>> elements;
+    function<void()> clickFunc;
+
+private:
+    int maxElements;
 };

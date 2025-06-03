@@ -1,164 +1,134 @@
-#include "TrackGeneration.h"
-#include <stdlib.h>
-#include <GL/glew.h>
+#include "Track.h"
 #include "../../Camera.h"
 #include "Spline.h"
-#include <cstdio>
-#include <time.h>
-#include <algorithm>  
 
-float randomFloat()
-{
-    return (float)(rand()) / (float)(RAND_MAX);
+#include <random>
+#include <algorithm>
+#include <cmath>
+#include <ranges>
+
+namespace {
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<float> dist01(0.0f, 1.0f);
+
+    float randomFloat() {
+        return dist01(rng);
+    }
 }
- 
 
-TrackGeneration::TrackGeneration(Camera* camera, GLuint programID) {
-    this->camera = camera;
-    this->programID = programID;
-    srand(time(NULL));
-
-    vector<vec2> pathPoints[3];
-    vector<vec2> leftPathPoints;
-    vector<vec2> rightPathPoints;
-
+Track::Track(Camera& cam, GLuint progID)
+    : camera(cam), programID(progID)
+{
+    std::array<std::vector<vec2>, PATH_COUNT> pathPoints;
     generateRoughPath(pathPoints);
+
     refinePath(pathPoints[1], -1);
     refinePath(pathPoints[2], -1);
+
     createTrack(pathPoints);
 
-    //path
+    GLuint vao = 0;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
 
-    GLuint VertexArrayID;
-    for (int i = 0; i < 3; i++)
-    {
-        glGenVertexArrays(1, &VertexArrayID);
-        glBindVertexArray(VertexArrayID);
-
-        glGenBuffers(1, &vertexbuffer[i]);
-        glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer[i]);
-        glBufferData(GL_ARRAY_BUFFER, trackPoints[i].size() * sizeof(vec3), &trackPoints[i][0], GL_STATIC_DRAW);
+    for (std::size_t i = 0; i < PATH_COUNT; ++i) {
+        glGenBuffers(1, &vertexBuffers[i]);
+        glBindBuffer(GL_ARRAY_BUFFER, vertexBuffers[i]);
+        glBufferData(GL_ARRAY_BUFFER,
+                     trackPoints[i].size() * sizeof(vec3),
+                     trackPoints[i].data(),
+                     GL_STATIC_DRAW);
     }
 
-    //interpolation points
-    glGenVertexArrays(1, &VertexArrayID);
-    glBindVertexArray(VertexArrayID);
-
-    glGenBuffers(1, &debugVertexbuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, debugVertexbuffer);
-    glBufferData(GL_ARRAY_BUFFER, debugPoints.size() * sizeof(vec3), &debugPoints[0], GL_STATIC_DRAW);
+    glGenBuffers(1, &debugVertexBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, debugVertexBuffer);
+    glBufferData(GL_ARRAY_BUFFER,
+                 debugPoints.size() * sizeof(vec3),
+                 debugPoints.data(),
+                 GL_STATIC_DRAW);
 }
 
-void TrackGeneration::draw() {
-
+void Track::draw() {
     glUseProgram(programID);
 
-    GLuint MatrixID = glGetUniformLocation(programID, "MVP");
-    glUniformMatrix4fv(MatrixID, 1, GL_FALSE, camera->getModelViewProjection());
+    GLuint matrixID = glGetUniformLocation(programID, "MVP");
+    glUniformMatrix4fv(matrixID, 1, GL_FALSE, camera.getModelViewProjection());
 
-    for (int i = 0; i < 3; i++)
-    {
+    for (std::size_t i = 0; i < PATH_COUNT; ++i) {
         glEnableVertexAttribArray(0);
-        glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer[i]);
-        glVertexAttribPointer(
-        0,                  // attribute 0. No particular reason for 0, but must match the layout in the shader.
-        3,                  // size
-        GL_FLOAT,           // type
-        GL_FALSE,           // normalized?
-        0,                  // stride
-        (void*)0            // array buffer offset
-        );
-
-        // Draw the triangle !
-        glDrawArrays(GL_LINE_STRIP, 0, trackPoints[i].size()); // 12*3 indices starting at 0 -> 12 triangles -> 6 squares
-
+        glBindBuffer(GL_ARRAY_BUFFER, vertexBuffers[i]);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+        glDrawArrays(GL_LINE_STRIP, 0, static_cast<GLsizei>(trackPoints[i].size()));
         glDisableVertexAttribArray(0);
     }
-    
-
 
     glEnable(GL_PROGRAM_POINT_SIZE);
-
     glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, debugVertexbuffer);
-    glVertexAttribPointer(
-    0,                  // attribute 0. No particular reason for 0, but must match the layout in the shader.
-    3,                  // size
-    GL_FLOAT,           // type
-    GL_FALSE,           // normalized?
-    0,                  // stride
-    (void*)0            // array buffer offset
-    );
-
-    // Draw the triangle !
-    glDrawArrays(GL_POINTS, 0, debugPoints.size()); // 12*3 indices starting at 0 -> 12 triangles -> 6 squares
-
+    glBindBuffer(GL_ARRAY_BUFFER, debugVertexBuffer);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(debugPoints.size()));
     glDisableVertexAttribArray(0);
 }
 
-void TrackGeneration::generateRoughPath(vector<vec2> pathPoints[3]) {
+void Track::generateRoughPath(std::array<std::vector<vec2>, PATH_COUNT>& pathPoints) {
+    std::vector<vec2> controlPoints = {
+        {-2.f, -1.f}, {-2.f, 1.f}, {-1.f, 2.f}, {1.f, 2.f},
+        {2.f, 1.f}, {2.f, -1.f}, {1.f, -2.f}, {-1.f, -2.f}
+    };
 
-    vector<vec2> pts = {vec2( -2, -1), vec2(-2, 1), vec2( -1, 2), vec2( 1, 2), vec2( 2, 1), vec2(2, -1), vec2(1, -2), vec2(-1, -2)};
-    Spline spl(pts, true);
+    Spline spl(controlPoints, true);
 
-    /*int amountCurves = rand() % 5 + 5;
-    for (int i = 0; i < amountCurves; i++)
-    {
-        spl.addCurve(randomFloat(), randomFloat() * 60 - 30, (randomFloat() - 0.5) * 3);
-    }*/
-
-    //spl.addCurve(randomFloat(), randomFloat() * 60 - 30, (randomFloat() - 0.5) * 3);
-
-    for (int i = 0; i < 16; i++)
-    {
-        spl.changeCurve(i, randomFloat() * 60 - 30, (randomFloat() - 0.5) * 4);
+    for (int i = 0; i < 16; ++i) {
+        spl.changeCurve(i, randomFloat() * 60.f - 30.f, (randomFloat() - 0.5f) * 4.f);
     }
 
-    //spl.addCurve(0.3, 90, -0.5);
     spl.getLine(pathPoints[0]);
-    spl.createParallelLine(pathPoints[1], -0.2);
-    spl.createParallelLine(pathPoints[2], 0.2);
+    spl.createParallelLine(pathPoints[1], -0.2f);
+    spl.createParallelLine(pathPoints[2], 0.2f);
 
-    vector<vec2> interpolationPoints = spl.getDebugPoints();
-    for (int i = 0; i < interpolationPoints.size(); i++)
-    {
-        debugPoints.push_back(vec3(interpolationPoints[i].x, interpolationPoints[i].y, 0.f));
-    }
+    /*for (const auto& p : spl.getDebugPoints()) {
+        debugPoints.emplace_back(p.x, p.y, 0.f);
+    }*/
 }
 
-void TrackGeneration::refinePath(vector<vec2> &pathPoints, int dir) {
-    int i = 0;
-    while (i < pathPoints.size())
-    {
-        int k = i + 1;
-        vec2 middle = getBallCenter(pathPoints[i], pathPoints[k], dir);
-        
-        for (int j = 0; j < 10; j++)
-        {
-            if (distance(middle, pathPoints[k+j]) < BALL_RADIUS) {
+void Track::refinePath(std::vector<vec2>& pathPoints, int dir) {
+    std::size_t i = 0;
+    while (i + 1 < pathPoints.size()) {
+        std::size_t k = i + 1;
+        const vec2 middle = getBallCenter(pathPoints[i], pathPoints[k], dir);
+
+        bool erased = false;
+        for (std::size_t j = 0; j + k < pathPoints.size() && j < 10; ++j) {
+            if (glm::distance(middle, pathPoints[k + j]) < BALL_RADIUS) {
                 pathPoints.erase(pathPoints.begin() + k);
+                erased = true;
                 break;
             }
         }
-        i++;
-    }    
+
+        if (!erased) {
+            ++i;
+        }
+    }
 }
 
-vec2 TrackGeneration::getBallCenter(vec2 p1, vec2 p2, int dir) {
-    vec2 middelPoint = 0.5f * (p1 + p2);
-    vec2 dirVec = middelPoint - p1;
-    float dist = dot(dirVec, dirVec);
-    vec2 normal = dirVec / sqrt(dist);
+vec2 Track::getBallCenter(const vec2& p1, const vec2& p2, int dir) const {
+    const vec2 mid = 0.5f * (p1 + p2);
+    const vec2 delta = mid - p1;
+    const float d2 = glm::dot(delta, delta);
 
-    return middelPoint + vec2(normal.y, -normal.x) * (sqrt(BALL_RADIUS * BALL_RADIUS - dist) * dir);
+    if (d2 > BALL_RADIUS * BALL_RADIUS) return mid;  // Avoid sqrt of negative
+
+    const vec2 normal = delta / std::sqrt(d2);
+    float offset = std::sqrt(std::max(BALL_RADIUS * BALL_RADIUS - d2, 0.f));
+
+    return mid + vec2(normal.y, -normal.x) * offset * static_cast<float>(dir);
 }
 
-
-void TrackGeneration::createTrack(vector<vec2> pathPoints[3]) {
-    for (int i = 0; i < pathPoints[0].size(); i++)
-    {
-        trackPoints[0].push_back(vec3(pathPoints[0][i].x, pathPoints[0][i].y, 0.f));
-        trackPoints[1].push_back(vec3(pathPoints[1][i].x, pathPoints[1][i].y, 0.f));
-        trackPoints[2].push_back(vec3(pathPoints[2][i].x, pathPoints[2][i].y, 0.f));
+void Track::createTrack(const std::array<std::vector<vec2>, PATH_COUNT>& pathPoints) {
+    for (std::size_t i = 0; i < pathPoints[0].size(); ++i) {
+        for (std::size_t j = 0; j < PATH_COUNT; ++j) {
+            trackPoints[j].emplace_back(pathPoints[j][i].x, pathPoints[j][i].y, 0.f);
+        }
     }
 }

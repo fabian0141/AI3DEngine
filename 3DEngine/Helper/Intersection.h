@@ -2,6 +2,6 @@
 using namespace glm;
 
 class Intersection {
-    public:
-        static bool  isInsideQuad(vec2 point, vec2 lowerRight, vec2 upperLeft);
+public:
+    static bool isInsideQuad(const vec2& point, const vec2& bottomRight, const vec2& topLeft);
 };

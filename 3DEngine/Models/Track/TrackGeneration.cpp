@@ -1,233 +1,159 @@
 #include "TrackGeneration.h"
-#include <stdlib.h>
-#include <GL/glew.h>
 #include "../../Camera.h"
 #include "Spline.h"
-#include <cstdio>
-#include <time.h>
-#include <algorithm>  
 
-float randomFloat()
-{
-    return (float)(rand()) / (float)(RAND_MAX);
-}
- 
+TrackGeneration::TrackGeneration() : GUIElement(0) {
+    
+    std::random_device rd;
+    std::mt19937 gen(rd());
 
-TrackGeneration::TrackGeneration(GUI* gui) : GUIElement(0), gui(gui) {
-    srand(time(NULL));
+    interpolationPoints = {
+        {0, 200}, {0, 800}, {200, 1000}, {1200, 1000},
+        {1400, 800}, {1400, 200}, {1200, 0}, {200, 0}
+    };
 
-    vector<vec2> leftPathPoints;
-    vector<vec2> rightPathPoints;
-
-    interpolationPoints = {vec2( 0, 200), vec2(0, 800), vec2( 200, 1000), vec2( 1200, 1000), vec2( 1400, 800), vec2(1400, 200), vec2(1200, 0), vec2(200, 0)};
-
-    vector<vec2> pathPoints[3];
-    generateRoughPath(pathPoints, false);
-    printf("%d ", pathPoints[1].size());
+    std::array<std::vector<vec2>, 3> pathPoints;
+    generateRoughPath(pathPoints, true);
     refinePath(pathPoints[1], 1);
-    printf("%d \n", pathPoints[1].size());
     refinePath(pathPoints[2], 1);
     createTrack(pathPoints);
-
-    //path
 
     GLuint VertexArrayID;
     glGenVertexArrays(1, &VertexArrayID);
     glBindVertexArray(VertexArrayID);
 
-    for (int i = 0; i < 3; i++)
-    {
-        glGenBuffers(1, &vertexbuffer[i]);
-        glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer[i]);
-        glBufferData(GL_ARRAY_BUFFER, trackPoints[i].size() * sizeof(vec3), &trackPoints[i][0], GL_STATIC_DRAW);
+    for (size_t i = 0; i < vertexBuffers.size(); ++i) {
+        glGenBuffers(1, &vertexBuffers[i]);
+        glBindBuffer(GL_ARRAY_BUFFER, vertexBuffers[i]);
+        glBufferData(GL_ARRAY_BUFFER, trackPoints[i].size() * sizeof(vec3), trackPoints[i].data(), GL_STATIC_DRAW);
     }
 
-    //interpolation points
-    glGenBuffers(1, &debugVertexbuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, debugVertexbuffer);
-    glBufferData(GL_ARRAY_BUFFER, interpolationPoints.size() * sizeof(vec3), &interpolationPoints[0], GL_STATIC_DRAW);
+    glGenBuffers(1, &debugVertexBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, debugVertexBuffer);
+    glBufferData(GL_ARRAY_BUFFER, interpolationPoints.size() * sizeof(vec3), interpolationPoints.data(), GL_STATIC_DRAW);
 }
 
-void TrackGeneration::click(const vec2 &mousePos, int action) {
+float TrackGeneration::randomFloat() {
+    static std::mt19937 gen(std::random_device{}());
+    static std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    return dist(gen);
+}
 
-    //vec2 mPos = (mousePos / gui->canvasSize - 1.0f) * gui->contentZoom;
+void TrackGeneration::click(const vec2& mousePos, int action) {
     if (action == 1) {
-        float scale = (1 + gui->contentZoom) / 2.0f;
-        vec2 mPos = (mousePos - gui->canvasSize * (1 - gui->contentZoom)) / gui->contentZoom - vec2(gui->contentPos.x, gui->contentPos.y);
-        //printf("(%f, %f) (%f, %f) (%f, %f) %f     ", mousePos.x, mousePos.y, mPos.x, mPos.y, gui->contentPos.x, gui->contentPos.y, gui->contentZoom);
+        GUI &gui = GUI::Get();
+        const auto scale = (1 + gui.contentZoom) / 2.0f;
+        vec2 mPos = (mousePos - gui.canvasSize * (1 - gui.contentZoom)) / gui.contentZoom
+                    - vec2(gui.contentPos.x, gui.contentPos.y);
 
-        for (size_t i = 0; i < interpolationPoints.size(); i++)
-        {
-            //printf("(%f, %f) ", interpolationPoints[i].x, interpolationPoints[i].y);
-
-            if (distance(mPos, interpolationPoints[i]) < 20) {
-                //printf("Point hit!\n");
+        for (size_t i = 0; i < interpolationPoints.size(); ++i) {
+            if (glm::distance(mPos, interpolationPoints[i]) < 20) {
                 movePoint = true;
                 pointIdx = i;
                 break;
             }
         }
-        //printf("\n");
     } else {
         movePoint = false;
     }
 }
 
-void TrackGeneration::preDraw() {}
+void TrackGeneration::preDraw(const vec2& parentSize) {}
 
 void TrackGeneration::draw() {
-    if (movePoint) {
-        vec2 mPos = (gui->mousePos - gui->canvasSize * (1 - gui->contentZoom)) / gui->contentZoom - vec2(gui->contentPos.x, gui->contentPos.y);
+    GUI &gui = GUI::Get();
 
+    if (movePoint) {
+        vec2 mPos = (gui.mousePos - gui.canvasSize * (1 - gui.contentZoom)) / gui.contentZoom
+                    - vec2(gui.contentPos.x, gui.contentPos.y);
         interpolationPoints[pointIdx] = mPos;
-        vector<vec2> pathPoints[3];
-        generateRoughPath(pathPoints, false);
+
+        std::array<std::vector<vec2>, 3> pathPoints;
+        generateRoughPath(pathPoints, true);
         refinePath(pathPoints[1], 1);
         refinePath(pathPoints[2], 1);
         createTrack(pathPoints);
 
-        for (int i = 0; i < 3; i++)
-        {
-            glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer[i]);
-            glBufferData(GL_ARRAY_BUFFER, trackPoints[i].size() * sizeof(vec3), &trackPoints[i][0], GL_STATIC_DRAW);
+        for (size_t i = 0; i < vertexBuffers.size(); ++i) {
+            glBindBuffer(GL_ARRAY_BUFFER, vertexBuffers[i]);
+            glBufferData(GL_ARRAY_BUFFER, trackPoints[i].size() * sizeof(vec3), trackPoints[i].data(), GL_STATIC_DRAW);
         }
 
-        //interpolation points
-        glBindBuffer(GL_ARRAY_BUFFER, debugVertexbuffer);
-        glBufferData(GL_ARRAY_BUFFER, interpolationPoints.size() * sizeof(vec3), &interpolationPoints[0], GL_STATIC_DRAW);
+        glBindBuffer(GL_ARRAY_BUFFER, debugVertexBuffer);
+        glBufferData(GL_ARRAY_BUFFER, interpolationPoints.size() * sizeof(vec3), interpolationPoints.data(), GL_STATIC_DRAW);
     }
 
-    int programID = gui->getProgramID(GUI::TRACK_GENERATION_PROGRAM);
+    const int programID = gui.getProgramID(GUIProgram::TRACK_GENERATION);
     glUseProgram(programID);
-    GLuint canvasSizeID = glGetUniformLocation(programID, "canvasSize");
-    glUniform2f(canvasSizeID, gui->canvasSize.x, gui->canvasSize.y);
-    GLuint contenPosID = glGetUniformLocation(programID, "contentPos");
-    glUniform2f(contenPosID, gui->contentPos.x, gui->contentPos.y);
-    GLuint contentZoomID = glGetUniformLocation(programID, "contentZoom");
-    glUniform1f(contentZoomID, gui->contentZoom);
+    glUniform2f(glGetUniformLocation(programID, "canvasSize"), gui.canvasSize.x, gui.canvasSize.y);
+    glUniform2f(glGetUniformLocation(programID, "contentPos"), gui.contentPos.x, gui.contentPos.y);
+    glUniform1f(glGetUniformLocation(programID, "contentZoom"), gui.contentZoom);
     glEnable(GL_PROGRAM_POINT_SIZE);
 
-    for (int i = 0; i < 3; i++)
-    {
+    for (size_t i = 0; i < vertexBuffers.size(); ++i) {
         glEnableVertexAttribArray(0);
-        glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer[i]);
-        glVertexAttribPointer(
-        0,                  // attribute 0. No particular reason for 0, but must match the layout in the shader.
-        2,                  // size
-        GL_FLOAT,           // type
-        GL_FALSE,           // normalized?
-        0,                  // stride
-        (void*)0            // array buffer offset
-        );
-
-        // Draw the triangle !
-        glDrawArrays(GL_LINE_STRIP, 0, trackPoints[i].size()); // 12*3 indices starting at 0 -> 12 triangles -> 6 squares
-
-        if (i == 1) {
-            glDrawArrays(GL_POINTS, 0, trackPoints[i].size()); // 12*3 indices starting at 0 -> 12 triangles -> 6 squares
-        }
-
+        glBindBuffer(GL_ARRAY_BUFFER, vertexBuffers[i]);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+        glDrawArrays((i == 1) ? GL_POINTS : GL_LINE_STRIP, 0, static_cast<GLsizei>(trackPoints[i].size()));
+        if (i == 1) glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(trackPoints[i].size()));
         glDisableVertexAttribArray(0);
     }
-    
-
-
 
     glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, debugVertexbuffer);
-    glVertexAttribPointer(
-    0,                  // attribute 0. No particular reason for 0, but must match the layout in the shader.
-    2,                  // size
-    GL_FLOAT,           // type
-    GL_FALSE,           // normalized?
-    0,                  // stride
-    (void*)0            // array buffer offset
-    );
-
-    // Draw the triangle !
-    glDrawArrays(GL_POINTS, 0, interpolationPoints.size()); // 12*3 indices starting at 0 -> 12 triangles -> 6 squares
-
+    glBindBuffer(GL_ARRAY_BUFFER, debugVertexBuffer);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(interpolationPoints.size()));
     glDisableVertexAttribArray(0);
 }
 
-void TrackGeneration::generateRoughPath(vector<vec2> pathPoints[3], bool randomize) {
-
+void TrackGeneration::generateRoughPath(std::array<std::vector<vec2>, 3>& pathPoints, bool randomize) {
     Spline spl(interpolationPoints, true);
     if (randomize) {
-        for (int i = 0; i < 16; i++)
-        {
-            spl.changeCurve(i, randomFloat() * 60 - 30, (randomFloat() - 0.5) * 4);
+        for (int i = 0; i < 16; ++i) {
+            spl.changeCurve(i, randomFloat() * 60 - 30, (randomFloat() - 0.5f) * 500.0f);
         }
     }
 
-    //spl.addCurve(0.3, 90, -0.5);
     spl.getLine(pathPoints[0]);
     spl.createParallelLine(pathPoints[1], -50);
     spl.createParallelLine(pathPoints[2], 50);
 
-    vector<vec2> interPoints = spl.getInterpolationPoints();
-    interpolationPoints.clear();
-    copy(interPoints.begin(), interPoints.end(), back_inserter(interpolationPoints));
+    interpolationPoints = spl.getInterpolationPoints();
 }
 
-void TrackGeneration::refinePath(vector<vec2> &pathPoints, int dir) {
-    int i = 0;
-    while (i < pathPoints.size())
-    {
-        //printf("(%f,%f) ", pathPoints[i].x, pathPoints[i].y);
-        int k = (i + 1) % pathPoints.size();
-        //float t;
-        //vec2 middle = getBallCenter(pathPoints[i], pathPoints[k], dir);
-        
-        for (int j = 1; j < 50; j++)
-        {
-            //float dist = distance(middle, pathPoints[k+j]);
-            //if (dist < BALL_RADIUS) {
-            if (distance(pathPoints[i], pathPoints[k]) > distance(pathPoints[i], pathPoints[(k+j) % pathPoints.size()])) {
+void TrackGeneration::refinePath(std::vector<vec2>& pathPoints, int dir) {
+    size_t i = 0;
+    while (i < pathPoints.size()) {
+        size_t k = (i + 1) % pathPoints.size();
+        bool erased = false;
 
-                if (k == pathPoints.size()-1) {
-                    /*pathPoints[k] = pathPoints[1];
-                    pathPoints.erase(pathPoints.begin());
-
-                    i--;*/
-                    pathPoints.erase(pathPoints.begin() + k);
-                    i -= 2;
-                    break;
-                } else {
-                    pathPoints.erase(pathPoints.begin() + k);
-                    i--;
-                    if (k < i) {
-                        i--;
-                    }
-                    break;
-                }
-                //printf("(%d,%f,%f) ", k, distance(pathPoints[i], pathPoints[k]), distance(pathPoints[i], pathPoints[(k+j) % pathPoints.size()]));
-
+        for (int j = 1; j < 50; ++j) {
+            size_t idx = (k + j) % pathPoints.size();
+            if (glm::distance(pathPoints[i], pathPoints[k]) > glm::distance(pathPoints[i], pathPoints[idx])) {
+                pathPoints.erase(pathPoints.begin() + k);
+                erased = true;
+                if (k <= i && i > 0) --i;
+                break;
             }
         }
-        i++;
+        if (!erased) ++i;
+        if (pathPoints.size() <= 2) break;
     }
 }
 
 vec2 TrackGeneration::getBallCenter(vec2 p1, vec2 p2, int dir) {
-    vec2 middelPoint = 0.5f * (p1 + p2);
-    vec2 dirVec = middelPoint - p1;
-    float dist = dot(dirVec, dirVec);
-    vec2 normal = dirVec / sqrt(dist);
-
-    return middelPoint + vec2(normal.y, -normal.x) * (sqrt(BALL_RADIUS * BALL_RADIUS - dist) * dir);
+    vec2 mid = 0.5f * (p1 + p2);
+    vec2 dirVec = mid - p1;
+    float dist = glm::dot(dirVec, dirVec);
+    vec2 normal = dirVec / glm::sqrt(dist);
+    return mid + vec2(normal.y, -normal.x) * (glm::sqrt(BALL_RADIUS * BALL_RADIUS - dist) * static_cast<float>(dir));
 }
 
-
-void TrackGeneration::createTrack(vector<vec2> pathPoints[3]) {
-    trackPoints[0].clear();
-    trackPoints[1].clear();
-    trackPoints[2].clear();
-
-    copy(pathPoints[0].begin(), pathPoints[0].end(), back_inserter(trackPoints[0]));
-    trackPoints[0].push_back(trackPoints[0][0]);
-    copy(pathPoints[1].begin(), pathPoints[1].end(), back_inserter(trackPoints[1]));
-    trackPoints[1].push_back(trackPoints[1][0]);
-    copy(pathPoints[2].begin(), pathPoints[2].end(), back_inserter(trackPoints[2]));
-    trackPoints[2].push_back(trackPoints[2][0]);
+void TrackGeneration::createTrack(const std::array<std::vector<vec2>, 3>& pathPoints) {
+    for (size_t i = 0; i < 3; ++i) {
+        trackPoints[i] = pathPoints[i];
+        if (!trackPoints[i].empty()) {
+            trackPoints[i].push_back(trackPoints[i].front());
+        }
+    }
 }

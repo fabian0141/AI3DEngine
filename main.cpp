@@ -4,85 +4,75 @@
 #include "3DEngine/Loader/ObjLoader.h"
 #include "3DEngine/Loader/ShaderLoader.h"
 #include "3DEngine/Models/Track/TrackGeneration.h"
-#include <cstring>
 
+#include "3DEngine/GUI/Layout/Pane.h"
 #include "3DEngine/GUI/Button/Button.h"
 #include "3DEngine/GUI/Text/Text.h"
 
-/*void loadTrackScene() {
-    int width = 1024;
-    int height = 768;
-
-    Camera camera(width, height);
-    Window win(width, height, &camera);
-
-    GLuint programID = ShaderLoader::LoadShaders( "./Data/Shader/Model.vert", "./Data/Shader/Model.frag" );
-    GLuint trackID = ShaderLoader::LoadShaders( "./Data/Shader/Track.vert", "./Data/Shader/Track.frag" );
-
-    MaterialGroups matGroups(&camera, programID);
-
-
-    //ObjLoader::loadOBJ("./Data/Models/mclaren.obj", &matGroups);
-
-    std::vector<Model*> models;
-    models.push_back(new TrackGeneration(&camera, trackID));
-    //models.push_back(new ObjModel(&camera, "./Data/Models/mclaren.obj"));
-    
-    win.run(models, &matGroups);
-
-    for (int i = 0; i < models.size(); i++)
-    {
-        delete models[i];
-    }
-}*/
+#include <vector>
+#include <memory>
+#include <string_view>
 
 void loadTrackScene() {
-    int width = 1400;
-    int height = 1000;
+    constexpr int width = 1400;
+    constexpr int height = 1000;
 
     Window win(width, height);
-
-
-    GUI gui;
-    gui.addChildElement(new TrackGeneration(&gui));
     
-    win.run2D(gui);
+    unique_ptr<GUIElement> pane = make_unique<Pane>();
+    GUI &gui = GUI::Get();
+
+    pane->addChildElement(std::make_unique<TrackGeneration>());
+    
+    gui.setChild(std::move(pane));
+    win.run2D();
 }
 
 void loadMenu() {
-    int width = 800;
-    int height = 500;
-    Window win(width, height);
-    GUI gui;
-    gui.addChildElement(new Text(vec2(0, 0), 16, "Hello World!", &gui));
+    constexpr int width = 800;
+    constexpr int height = 500;
 
-    Button *but = new Button(vec2(100, 200), &gui);
-    but->addChildElement(new Text(vec2(0, 0), 16, "Test Button", &gui));
-    but->onClick([]() {
-        printf("Start Track Scene!\n");
+    Window win(width, height);
+    unique_ptr<GUIElement> pane = make_unique<Pane>();
+    GUI &gui = GUI::Get();
+
+    pane->addChildElement(std::move(make_unique<Text>(vec2{0, 0}, 16, "Hello World!")));
+
+    auto but = std::make_unique<Button>(vec2{100, 200});
+    but->addChildElement(std::make_unique<Text>(vec2{0, 0}, 16, "Test Button"));
+    but->onClick([] {
+        std::puts("Start Track Scene!");
         loadTrackScene();
     });
-    gui.addChildElement(but);
 
-    win.run2D(gui);
+    pane->addChildElement(std::move(but));
 
+    gui.setChild(std::move(pane));
+    win.run2D();
 }
 
 void generateFont() {
-    int width = 16;
-    int height = 16;
+    constexpr int width = 16;
+    constexpr int height = 16;
+
     Window win(width, height);
-    GLuint programID = ShaderLoader::LoadShaders( "./Data/Shader/FontMeta.vert", "./Data/Shader/FontMeta.frag" );
+    GLuint programID = ShaderLoader::LoadShaders(string("./Data/Shader/FontMeta.vert"), string("./Data/Shader/FontMeta.frag"));
     win.generate(width, height, programID, &GUI::generateFontMeta);
 }
 
-int main(int argc, char *argv[]){
+int main(int argc, char* argv[]) {
+    using namespace std::literals;
+
     if (argc == 1) {
         loadMenu();
-    } else if (std::memcmp(argv[1], "Font", 4) == 0) {
-        generateFont();
-    } else if (std::memcmp(argv[1], "TrackGeneration", 15) == 0) {
-        loadTrackScene();
+    } else {
+        const std::string_view arg = argv[1];
+        if (arg.starts_with("Font"sv)) {
+            generateFont();
+        } else if (arg.starts_with("TrackGeneration"sv)) {
+            loadTrackScene();
+        }
     }
 
+    return 0;
 }
